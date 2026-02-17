@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0F1419">
+<title>Process Tracker</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0F1419;color:#E7E9EA;font-family:'DM Sans',-apple-system,sans-serif;min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+input,select,textarea,button{font-family:'DM Sans',sans-serif;outline:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.hidden{display:none!important}
+.mono{font-family:'JetBrains Mono',monospace}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ══════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════
+const DEF_PROJ=["CEV","CEV-GL","CUE","DKV-MN","DKV-QC","INF","LGE","OCC","ORD","RNG","SLK","WEC","ABA","AFF-ADV-INT","AUS","AUT","BAU","BDN","DIY","FLU","HS","IMA","LOC","LUK","NED","OFF","PRO","QUI-FR","SEQ","SIB","SIL","TQE","TRB","UNE","SIM"];
+const DEF_CATS=[
+{id:"datos-analitica",label:"Datos analítica",color:"#8B5CF6",icon:"📊"},
+{id:"datos-weekly",label:"Datos weekly",color:"#6366F1",icon:"📅"},
+{id:"datos-status",label:"Datos status",color:"#7C3AED",icon:"📋"},
+{id:"revision-email",label:"Revisión email",color:"#3B82F6",icon:"👁️"},
+{id:"redaccion-correos",label:"Redacción correos",color:"#2563EB",icon:"✍️"},
+{id:"creacion-contenido",label:"Creación contenido",color:"#EC4899",icon:"🎨"},
+{id:"analisis-seo-geo",label:"Análisis SEO/GEO",color:"#10B981",icon:"🔎"},
+{id:"subir-articulos",label:"Subir artículos al blog",color:"#059669",icon:"📝"},
+{id:"analisis-ln-ls",label:"Análisis LN/LS",color:"#F59E0B",icon:"📈"},
+{id:"creacion-ls",label:"Creación LS",color:"#D97706",icon:"🧩"},
+{id:"creacion-emails",label:"Creación emails",color:"#06B6D4",icon:"📧"},
+{id:"creacion-lp",label:"Creación LP",color:"#0891B2",icon:"🖥️"},
+{id:"creacion-ctas",label:"Creación CTAs",color:"#EF4444",icon:"🔘"},
+{id:"creacion-listas-forms",label:"Creación listas/formularios",color:"#F97316",icon:"📑"},
+{id:"creacion-videos",label:"Creación vídeos",color:"#E11D48",icon:"🎬"},
+{id:"busqueda-keywords",label:"Búsqueda keywords",color:"#14B8A6",icon:"🔑"},
+{id:"analisis-conversion",label:"Análisis conversión",color:"#84CC16",icon:"🎯"},
+{id:"prospeccion-podcast",label:"Prospección podcast",color:"#A855F7",icon:"🎙️"}];
+const DC=["#F472B6","#FB923C","#A78BFA","#34D399","#FBBF24","#60A5FA","#C084FC","#4ADE80","#F87171","#38BDF8","#E879F9","#FCD34D","#2DD4BF","#FB7185","#818CF8"];
+const DI=["⚡","🔧","💡","🚀","📌","🏷️","🛠️","📦","🧪","🗂️","💬","🔗","📎","🎯","✨"];
+const PC=["#6366F1","#8B5CF6","#A855F7","#EC4899","#F43F5E","#EF4444","#F97316","#F59E0B","#84CC16","#22C55E","#10B981","#14B8A6","#06B6D4","#0EA5E9","#3B82F6","#2563EB","#7C3AED","#D946EF","#E11D48","#EA580C","#CA8A04","#65A30D","#059669","#0891B2","#0284C7","#4F46E5","#9333EA","#C026D3","#BE123C","#C2410C"];
+function pc(n){let h=0;for(let i=0;i<n.length;i++)h=n.charCodeAt(i)+((h<<5)-h);return PC[Math.abs(h)%PC.length]}
+function fm(m){if(m<1)return"<1 min";if(m<60)return Math.round(m)+" min";const h=Math.floor(m/60),r=Math.round(m%60);return r>0?h+"h "+r+"m":h+"h"}
+function td(s){const m=Math.floor(s/60),sc=s%60;return String(m).padStart(2,"0")+":"+String(sc).padStart(2,"0")}
+function uc(n){return `hsl(${n.charCodeAt(0)*37%360},55%,45%)`}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+// ══════════════════════════════════════
+// JSONP API
+// ══════════════════════════════════════
+let cbn=0;
+function api(url,action,params={}){
+  return new Promise((res,rej)=>{
+    const cb="__pt_"+(++cbn)+"_"+Date.now();
+    const to=setTimeout(()=>{delete window[cb];rej(new Error("Timeout (15s)"))},15000);
+    window[cb]=d=>{clearTimeout(to);delete window[cb];res(d)};
+    let u=url+(url.includes("?")?"&":"?")+"callback="+cb+"&action="+encodeURIComponent(action);
+    Object.entries(params).forEach(([k,v])=>{u+="&"+encodeURIComponent(k)+"="+encodeURIComponent(typeof v==="object"?JSON.stringify(v):String(v))});
+    const s=document.createElement("script");s.src=u;
+    s.onerror=()=>{clearTimeout(to);delete window[cb];s.remove();rej(new Error("Error de red"))};
+    s.onload=()=>setTimeout(()=>s.remove(),200);
+    document.head.appendChild(s);
+  });
+}
+
+// ══════════════════════════════════════
+// STATE
+// ══════════════════════════════════════
+const S={
+  phase:"loading",url:null,user:null,
+  entries:[],ccats:[],cprojs:[],members:[],
+  view:"timer",running:false,elapsed:0,cat:null,proj:null,task:"",
+  showCat:false,showProj:false,showQuick:false,qmin:"",
+  fM:"all",fC:"all",fP:"all",
+  saving:false,sync:true,
+  sUrl:"",sErr:"",sTesting:false,sOk:false,
+  lName:"",lBusy:false,
+};
+let tInt=null,tStart=null,refreshInt=null;
+function allP(){return[...DEF_PROJ,...S.cprojs]}
+function allC(){return[...DEF_CATS,...S.ccats]}
+function gc(id){return allC().find(c=>c.id===id)}
+
+// ══════════════════════════════════════
+// INIT
+// ══════════════════════════════════════
+async function init(){
+  S.url=localStorage.getItem("pt-url");
+  S.user=localStorage.getItem("pt-user");
+  if(S.url){
+    if(S.user){S.phase="app";render();await fetchAll();}
+    else{S.phase="login";render();try{const d=await api(S.url,"getAll");S.members=d.members||[];}catch(e){} render();}
+  }else{S.phase="setup";render();}
+  refreshInt=setInterval(()=>{if(S.phase==="app"&&!S.running)fetchAll()},20000);
+}
+
+async function fetchAll(){
+  try{
+    const d=await api(S.url,"getAll");
+    S.entries=d.entries||[];S.ccats=d.categories||[];S.cprojs=d.projects||[];S.members=d.members||[];S.sync=true;
+  }catch(e){S.sync=false;}
+  render();
+}
+
+// ══════════════════════════════════════
+// ACTIONS
+// ══════════════════════════════════════
+async function testUrl(){
+  const u=S.sUrl.trim();
+  if(!u.includes("script.google.com")){S.sErr="URL debe ser de script.google.com";render();return}
+  S.sTesting=true;S.sErr="";render();
+  try{
+    const d=await api(u,"getAll");
+    if(d&&d.entries!==undefined){
+      localStorage.setItem("pt-url",u);S.url=u;S.members=d.members||[];S.ccats=d.categories||[];S.cprojs=d.projects||[];
+      S.sOk=true;render();setTimeout(()=>{S.phase="login";render()},800);
+    }else{S.sErr="Respuesta inesperada";S.sTesting=false;render();}
+  }catch(e){S.sErr=e.message;S.sTesting=false;render();}
+}
+
+async function doLogin(name){
+  const t=name.trim();if(!t||S.lBusy)return;
+  S.lBusy=true;render();
+  try{await api(S.url,"addMember",{name:t});localStorage.setItem("pt-user",t);S.user=t;S.phase="app";S.lBusy=false;render();await fetchAll();}
+  catch(e){alert("Error de conexión");S.lBusy=false;render();}
+}
+
+function startT(){
+  if(!S.cat||!S.proj)return;
+  S.running=true;S.elapsed=0;tStart=Date.now();
+  tInt=setInterval(()=>{S.elapsed=Math.floor((Date.now()-tStart)/1000);render()},1000);
+  render();
+}
+
+async function stopT(){
+  clearInterval(tInt);S.running=false;
+  if(S.elapsed>0){
+    const c=gc(S.cat);
+    const e={id:S.user+"-"+Date.now(),category:S.cat,project:S.proj,member:S.user,task:S.task||c?.label||S.cat,seconds:S.elapsed,minutes:Math.round(S.elapsed/6)/10,date:new Date().toISOString().split("T")[0],timestamp:Date.now()};
+    S.entries.unshift(e);S.saving=true;render();
+    try{await api(S.url,"addEntry",{data:e});S.sync=true;}catch(er){S.sync=false;}
+    S.saving=false;
+  }
+  S.elapsed=0;S.task="";render();
+}
+
+async function doQuick(){
+  if(!S.cat||!S.proj||!S.qmin)return;
+  const mins=parseFloat(S.qmin);if(isNaN(mins)||mins<=0)return;
+  const c=gc(S.cat);
+  const e={id:S.user+"-"+Date.now(),category:S.cat,project:S.proj,member:S.user,task:S.task||c?.label||S.cat,seconds:Math.round(mins*60),minutes:mins,date:new Date().toISOString().split("T")[0],timestamp:Date.now()};
+  S.entries.unshift(e);S.qmin="";S.task="";S.showQuick=false;S.saving=true;render();
+  try{await api(S.url,"addEntry",{data:e});S.sync=true;}catch(er){S.sync=false;}
+  S.saving=false;render();
+}
+
+async function delEntry(id){S.entries=S.entries.filter(e=>e.id!==id);render();try{await api(S.url,"deleteEntry",{id});}catch(e){}}
+async function clearEntries(){S.entries=[];render();try{await api(S.url,"clearAll");}catch(e){}}
+
+async function mkCat(name){
+  const ex=allC().find(c=>c.label.toLowerCase()===name.toLowerCase());
+  if(ex)return ex.id;
+  const id="custom-"+name.toLowerCase().replace(/[^a-z0-9áéíóúñü]/g,"-").replace(/-+/g,"-");
+  const nc={id,label:name,color:DC[S.ccats.length%DC.length],icon:DI[S.ccats.length%DI.length],custom:true};
+  S.ccats.push(nc);render();
+  try{await api(S.url,"addCategory",{data:nc});}catch(e){}
+  return id;
+}
+
+async function mkProj(name){
+  const up=name.toUpperCase().trim();
+  const ex=allP().find(p=>p.toUpperCase()===up);
+  if(ex)return ex;
+  const t=name.trim();S.cprojs.push(t);render();
+  try{await api(S.url,"addProject",{name:t});}catch(e){}
+  return t;
+}
+
+function logout(){S.user=null;localStorage.removeItem("pt-user");S.phase="login";render();}
+function resetUrl(){S.url=null;localStorage.removeItem("pt-url");localStorage.removeItem("pt-user");S.sUrl="";S.sErr="";S.sTesting=false;S.sOk=false;S.phase="setup";render();}
+
+// ══════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════
+function render(){
+  const app=document.getElementById("app");
+  if(S.phase==="loading"){app.innerHTML=`<div style="height:100vh;display:flex;align-items:center;justify-content:center"><div style="width:36px;height:36px;border:3px solid #1D9BF0;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite"></div></div>`;return;}
+  if(S.phase==="setup"){renderSetup(app);return;}
+  if(S.phase==="login"){renderLogin(app);return;}
+  renderApp(app);
+}
+
+// ─── SETUP ───
+function renderSetup(el){
+  el.innerHTML=`
+  <div style="height:100vh;display:flex;align-items:center;justify-content:center">
+    <div style="width:100%;max-width:440px;padding:0 24px;animation:slideUp .4s ease">
+      <div style="text-align:center;margin-bottom:32px">
+        <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#1D9BF0,#0D6EBF);display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 16px">⚡</div>
+        <h1 style="font-size:22px;font-weight:700">Process Tracker</h1>
+        <p style="font-size:13px;color:#71767B;margin-top:6px">Configuración inicial</p>
+      </div>
+      <div style="background:#1A1F25;border-radius:16px;border:1px solid #2F3336;padding:20px;margin-bottom:16px">
+        <p style="font-size:13px;font-weight:600;margin-bottom:8px">Pega la URL de tu Google Apps Script:</p>
+        <p style="font-size:11px;color:#536471;margin-bottom:12px;line-height:1.5">La URL de Deploy → Manage deployments</p>
+        <textarea id="setupUrl" rows="3" placeholder="https://script.google.com/macros/s/.../exec"
+          style="width:100%;padding:12px 14px;border-radius:10px;background:#0F1419;border:1px solid #2F3336;color:#E7E9EA;font-size:13px;resize:none;line-height:1.4">${esc(S.sUrl)}</textarea>
+      </div>
+      ${S.sErr?`<div style="padding:10px 14px;border-radius:10px;background:#EF444415;border:1px solid #EF444430;margin-bottom:12px"><p style="font-size:12px;color:#EF4444">❌ ${esc(S.sErr)}</p></div>`:""}
+      ${S.sOk?`<div style="padding:10px 14px;border-radius:10px;background:#10B98115;border:1px solid #10B98130;margin-bottom:12px"><p style="font-size:12px;color:#10B981">✅ Conexión exitosa!</p></div>`:""}
+      <button id="setupBtn" ${S.sTesting||S.sOk?"disabled":""} style="width:100%;padding:14px;border-radius:14px;border:none;background:${S.sTesting||S.sOk?"#2F3336":"linear-gradient(135deg,#1D9BF0,#0D6EBF)"};color:${S.sTesting||S.sOk?"#536471":"#fff"};font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+        ${S.sTesting?"⏳ Probando...":S.sOk?"✅ Conectado":"📡 Conectar"}
+      </button>
+      <p style="font-size:11px;color:#536471;text-align:center;margin-top:20px;line-height:1.5">Solo una vez por dispositivo. Todo el equipo usa la misma URL.</p>
+    </div>
+  </div>`;
+  document.getElementById("setupUrl").addEventListener("input",e=>{S.sUrl=e.target.value;S.sErr="";S.sOk=false;});
+  document.getElementById("setupBtn").addEventListener("click",testUrl);
+}
+
+// ─── LOGIN ───
+function renderLogin(el){
+  const ml=S.members.map(m=>`
+    <button class="lmb" data-name="${esc(m)}" style="width:100%;padding:14px 16px;border-radius:14px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:15px;font-weight:500;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;opacity:${S.lBusy?.5:1}">
+      <div style="width:32px;height:32px;border-radius:10px;background:${uc(m)};display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700">${m.charAt(0).toUpperCase()}</div>
+      ${esc(m)}<span style="margin-left:auto;color:#536471;font-size:14px">→</span>
+    </button>`).join("");
+  el.innerHTML=`
+  <div style="height:100vh;display:flex;align-items:center;justify-content:center">
+    <div style="width:100%;max-width:380px;padding:0 24px;animation:slideUp .4s ease">
+      <div style="text-align:center;margin-bottom:36px">
+        <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#1D9BF0,#0D6EBF);display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 16px">⚡</div>
+        <h1 style="font-size:22px;font-weight:700">Process Tracker</h1>
+        <p style="font-size:13px;color:#71767B;margin-top:6px">Selecciona tu nombre o crea uno nuevo</p>
+      </div>
+      ${S.members.length?`<div style="margin-bottom:20px"><p style="font-size:11px;font-weight:600;color:#536471;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Equipo</p><div style="display:flex;flex-direction:column;gap:6px">${ml}</div></div>`:""}
+      <div style="${S.members.length?"border-top:1px solid #2F3336;padding-top:20px":""}">
+        <p style="font-size:11px;font-weight:600;color:#536471;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">${S.members.length?"Nuevo miembro":"Tu nombre"}</p>
+        <div style="display:flex;gap:8px">
+          <input id="loginName" placeholder="Escribe tu nombre..." value="${esc(S.lName)}" ${S.lBusy?"disabled":""}
+            style="flex:1;padding:14px 16px;border-radius:14px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:15px">
+          <button id="loginBtn" style="padding:14px 20px;border-radius:14px;border:none;background:linear-gradient(135deg,#1D9BF0,#0D6EBF);color:#fff;font-size:14px;font-weight:700;cursor:pointer">${S.lBusy?"...":"Entrar"}</button>
+        </div>
+      </div>
+      <p style="font-size:11px;color:#536471;text-align:center;margin-top:24px;line-height:1.5">Conectado a Google Sheets</p>
+    </div>
+  </div>`;
+  document.querySelectorAll(".lmb").forEach(b=>b.addEventListener("click",()=>doLogin(b.dataset.name)));
+  document.getElementById("loginName").addEventListener("input",e=>{S.lName=e.target.value});
+  document.getElementById("loginName").addEventListener("keydown",e=>{if(e.key==="Enter")doLogin(S.lName)});
+  document.getElementById("loginBtn").addEventListener("click",()=>doLogin(S.lName));
+}
+
+// ─── MAIN APP ───
+function renderApp(el){
+  const fe=S.entries.filter(e=>{
+    if(S.fM!=="all"&&e.member!==S.fM)return false;
+    if(S.fC!=="all"&&e.category!==S.fC)return false;
+    if(S.fP!=="all"&&e.project!==S.fP)return false;return true;
+  });
+  const um=[...new Set(S.entries.map(e=>e.member))].sort();
+  const ucats=[...new Set(S.entries.map(e=>e.category))];
+  const uprojs=[...new Set(S.entries.map(e=>e.project).filter(Boolean))].sort();
+
+  el.innerHTML=`
+  <!-- HEADER -->
+  <div style="padding:12px 20px;border-bottom:1px solid #2F3336;background:linear-gradient(135deg,#0F1419,#1A1F25);position:sticky;top:0;z-index:100">
+    <div style="display:flex;align-items:center;justify-content:space-between;max-width:900px;margin:0 auto;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#1D9BF0,#0D6EBF);display:flex;align-items:center;justify-content:center;font-size:16px">⚡</div>
+        <div>
+          <h1 style="font-size:15px;font-weight:700">Process Tracker</h1>
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:10px;color:${S.sync?"#10B981":"#EF4444"};font-weight:500">${S.sync?"● Google Sheets":"● Sin conexión"}</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;gap:2px;background:#1A1F25;border-radius:12px;padding:3px;border:1px solid #2F3336">
+          ${["timer","dashboard","history"].map(v=>`<button class="tabBtn" data-v="${v}" style="display:flex;align-items:center;gap:4px;padding:6px 12px;border-radius:10px;border:none;background:${S.view===v?"#1D9BF0":"transparent"};color:${S.view===v?"#fff":"#71767B"};font-size:12px;font-weight:600;cursor:pointer">${v==="timer"?"⏱ Track":v==="dashboard"?"📊 Análisis":"📋 Historial"}</button>`).join("")}
+        </div>
+        <button id="logoutBtn" style="display:flex;align-items:center;gap:5px;padding:6px 10px;border-radius:10px;border:1px solid #2F3336;background:transparent;color:#71767B;font-size:12px;cursor:pointer">
+          <div style="width:22px;height:22px;border-radius:7px;background:${uc(S.user)};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700">${S.user.charAt(0).toUpperCase()}</div>
+          ${esc(S.user)}
+        </button>
+      </div>
+    </div>
+  </div>
+  <div style="max-width:900px;margin:0 auto;padding:20px 20px 40px">
+    ${S.view==="timer"?renderTimer():S.view==="dashboard"?renderDash(fe,um,ucats,uprojs):renderHistory(fe,um,ucats,uprojs)}
+  </div>`;
+
+  // Bind events
+  document.querySelectorAll(".tabBtn").forEach(b=>b.addEventListener("click",()=>{S.view=b.dataset.v;if(b.dataset.v!=="timer")fetchAll();else render();}));
+  document.getElementById("logoutBtn").addEventListener("click",logout);
+  if(S.view==="timer")bindTimer();
+  if(S.view==="dashboard")bindDash();
+  if(S.view==="history")bindHistory();
+}
+
+// ─── TIMER VIEW ───
+function renderTimer(){
+  const sc=gc(S.cat);
+  const myRecent=S.entries.filter(e=>e.member===S.user).slice(0,5);
+  const um=[...new Set(S.entries.map(e=>e.member))].sort();
+  const up=[...new Set(S.entries.map(e=>e.project).filter(Boolean))].sort();
+  return `
+  <div style="animation:slideUp .3s ease">
+    <div style="text-align:center;padding:28px 20px;background:${S.running?"linear-gradient(135deg,rgba(29,155,240,.08),rgba(29,155,240,.02))":"transparent"};border-radius:20px;border:${S.running?"1px solid rgba(29,155,240,.2)":"1px solid transparent"};margin-bottom:24px;transition:all .3s">
+      <div class="mono" style="font-size:60px;font-weight:600;color:${S.running?"#1D9BF0":"#536471"};letter-spacing:.05em;line-height:1;margin-bottom:8px">${td(S.elapsed)}</div>
+      ${S.running?`<div style="display:flex;align-items:center;justify-content:center;gap:6px;animation:pulse 2s infinite"><div style="width:8px;height:8px;border-radius:50%;background:#EF4444"></div><span style="font-size:13px;color:#71767B">Registrando como ${esc(S.user)}...</span></div>`:""}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
+      <!-- Project -->
+      <div style="position:relative" id="projWrap">
+        <button id="projBtn" ${S.running?"disabled":""} style="width:100%;padding:12px 16px;border-radius:14px;background:#1A1F25;border:${S.proj?`1px solid ${pc(S.proj)}40`:"1px solid #2F3336"};color:${S.proj?"#E7E9EA":"#536471"};font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:space-between;opacity:${S.running?.5:1}">
+          <span style="display:flex;align-items:center;gap:8px">${S.proj?`<span style="width:10px;height:10px;border-radius:3px;background:${pc(S.proj)};display:inline-block"></span>${esc(S.proj)}`:`📁 Proyecto`}</span>
+          <span style="color:#71767B">▾</span>
+        </button>
+        <div id="projDD" class="${S.showProj?"":"hidden"}" style="position:absolute;top:100%;left:0;right:0;background:#1A1F25;border:1px solid #2F3336;border-radius:14px;margin-top:4px;z-index:50;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+          <div style="padding:8px 12px;border-bottom:1px solid #2F3336"><input id="projSearch" placeholder="Buscar proyecto..." style="width:100%;padding:8px 12px;border-radius:8px;background:#0F1419;border:1px solid #2F3336;color:#E7E9EA;font-size:13px"></div>
+          <div id="projList" style="max-height:240px;overflow-y:auto"></div>
+          <div id="projOtro" class="hidden" style="padding:10px 12px;border-top:1px solid #2F3336;background:#0F1419">
+            <p style="font-size:11px;color:#71767B;margin-bottom:6px;font-weight:600">Nuevo proyecto (visible para el equipo):</p>
+            <div style="display:flex;gap:6px"><input id="projOtroIn" placeholder="Nombre..." style="flex:1;padding:9px 12px;border-radius:8px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:13px"><button id="projOtroBtn" style="padding:9px 14px;border-radius:8px;border:none;background:#1D9BF0;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Crear</button></div>
+          </div>
+        </div>
+      </div>
+      <!-- Category -->
+      <div style="position:relative" id="catWrap">
+        <button id="catBtn" ${S.running?"disabled":""} style="width:100%;padding:12px 16px;border-radius:14px;background:#1A1F25;border:${sc?`1px solid ${sc.color}40`:"1px solid #2F3336"};color:${sc?"#E7E9EA":"#536471"};font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:space-between;opacity:${S.running?.5:1}">
+          <span style="display:flex;align-items:center;gap:8px">${sc?`<span>${sc.icon}</span>${esc(sc.label)}`:`🕐 Tipo de tarea`}</span>
+          <span style="color:#71767B">▾</span>
+        </button>
+        <div id="catDD" class="${S.showCat?"":"hidden"}" style="position:absolute;top:100%;left:0;right:0;background:#1A1F25;border:1px solid #2F3336;border-radius:14px;margin-top:4px;z-index:50;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+          <div style="padding:8px 12px;border-bottom:1px solid #2F3336"><input id="catSearch" placeholder="Buscar categoría..." style="width:100%;padding:8px 12px;border-radius:8px;background:#0F1419;border:1px solid #2F3336;color:#E7E9EA;font-size:13px"></div>
+          <div id="catList" style="max-height:240px;overflow-y:auto"></div>
+          <div id="catOtro" class="hidden" style="padding:10px 12px;border-top:1px solid #2F3336;background:#0F1419">
+            <p style="font-size:11px;color:#71767B;margin-bottom:6px;font-weight:600">Nueva categoría (visible para el equipo):</p>
+            <div style="display:flex;gap:6px"><input id="catOtroIn" placeholder="Nombre..." style="flex:1;padding:9px 12px;border-radius:8px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:13px"><button id="catOtroBtn" style="padding:9px 14px;border-radius:8px;border:none;background:#1D9BF0;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Crear</button></div>
+          </div>
+        </div>
+      </div>
+      <!-- Task -->
+      <input id="taskIn" placeholder="Detalle de la tarea (opcional)" value="${esc(S.task)}" ${S.running?"disabled":""}
+        style="width:100%;padding:12px 16px;border-radius:14px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:14px;opacity:${S.running?.5:1}">
+    </div>
+    <!-- Buttons -->
+    <div style="display:flex;gap:10px">
+      ${!S.running?`
+        <button id="startBtn" ${!S.cat||!S.proj?"disabled":""} style="flex:1;padding:16px;border-radius:16px;border:none;background:${!S.cat||!S.proj?"#2F3336":"linear-gradient(135deg,#1D9BF0,#0D6EBF)"};color:${!S.cat||!S.proj?"#536471":"#fff"};font-size:16px;font-weight:700;cursor:pointer">▶ Iniciar</button>
+        <button id="manualBtn" style="padding:16px 20px;border-radius:16px;border:1px solid #2F3336;background:#1A1F25;color:#71767B;font-size:14px;font-weight:600;cursor:pointer">＋ Manual</button>
+      `:`<button id="stopBtn" style="flex:1;padding:16px;border-radius:16px;border:none;background:linear-gradient(135deg,#EF4444,#DC2626);color:#fff;font-size:16px;font-weight:700;cursor:pointer">⏹ Parar y guardar</button>`}
+    </div>
+    <!-- Quick add -->
+    <div id="quickBox" class="${S.showQuick?"":"hidden"}" style="margin-top:12px;padding:16px;border-radius:16px;background:#1A1F25;border:1px solid #2F3336;animation:slideUp .2s ease">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><span style="font-size:14px;font-weight:600">Añadir tiempo manual</span><button id="closeQuick" style="background:none;border:none;color:#71767B;cursor:pointer;font-size:18px">✕</button></div>
+      <div style="display:flex;gap:8px">
+        <input id="quickIn" type="number" placeholder="Minutos" value="${S.qmin}" style="flex:1;padding:10px 14px;border-radius:10px;background:#0F1419;border:1px solid #2F3336;color:#E7E9EA;font-size:14px">
+        <button id="quickBtn" style="padding:10px 20px;border-radius:10px;border:none;background:#1D9BF0;color:#fff;font-size:14px;font-weight:600;cursor:pointer;opacity:${!S.cat||!S.proj||!S.qmin?.5:1}">${S.saving?"...":"Guardar"}</button>
+      </div>
+    </div>
+    <!-- Recent -->
+    ${myRecent.length?`<div style="margin-top:28px">
+      <h3 style="font-size:12px;font-weight:600;color:#71767B;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Mis últimos registros</h3>
+      ${myRecent.map(e=>{const c=gc(e.category);return`
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;border-bottom:1px solid #2F333620">
+          <span style="font-size:18px">${c?.icon||"⚙️"}</span>
+          <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.task)}</div><div style="font-size:12px;color:#71767B;display:flex;align-items:center;gap:4px">${e.project?`<span style="background:${pc(e.project)}25;color:${pc(e.project)};padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">${esc(e.project)}</span>`:""} ${esc(c?.label||e.category)} · ${e.date}</div></div>
+          <div class="mono" style="font-size:14px;font-weight:600;color:${c?.color||"#78716C"}">${fm(e.minutes)}</div>
+        </div>`}).join("")}
+    </div>`:""}
+    <div style="margin-top:20px;padding:12px 16px;border-radius:12px;border:1px solid #2F333640;display:flex;align-items:center;gap:10px">
+      <span style="font-size:12px;color:#536471">👥 ${S.entries.length} registros · ${um.length} persona${um.length!==1?"s":""} · ${up.length} proyectos</span>
+      ${S.saving?`<span style="font-size:11px;color:#1D9BF0;margin-left:auto;animation:pulse 1s infinite">Enviando...</span>`:""}
+    </div>
+  </div>`;
+}
+
+function populateDropdown(listEl,items,search,selected){
+  const f=search?items.filter(i=>i.label.toLowerCase().includes(search.toLowerCase())):items;
+  listEl.innerHTML=f.map(i=>`
+    <button class="dropdown-item ddItem" data-id="${esc(i.id)}" style="color:${i.id==="__otro__"?"#1D9BF0":"#E7E9EA"};border-top:${i.id==="__otro__"?"1px solid #2F3336":"none"};font-weight:${i.id==="__otro__"?600:400};background:${selected===i.id?(i.color||"#1D9BF0")+"15":"transparent"}">
+      ${i.icon?`<span style="font-size:16px">${i.icon}</span>`:""}
+      ${i.dot?`<div style="width:8px;height:8px;border-radius:50%;background:${i.dot};flex-shrink:0"></div>`:""}
+      <span style="flex:1">${esc(i.label)}</span>
+      ${i.tag?`<span style="font-size:10px;color:#536471;background:#2F3336;padding:2px 6px;border-radius:4px">${i.tag}</span>`:""}
+      ${i.color&&i.id!=="__otro__"?`<div style="width:8px;height:8px;border-radius:50%;background:${i.color}"></div>`:""}
+    </button>`).join("");
+}
+
+function bindTimer(){
+  const projItems=[...allP().map(p=>({id:p,label:p,dot:pc(p)})),{id:"__otro__",label:"Otro (crear nuevo)",icon:"➕"}];
+  const catItems=[...allC().map(c=>({id:c.id,label:c.label,color:c.color,icon:c.icon,tag:c.custom?"nueva":undefined})),{id:"__otro__",label:"Otro (crear nueva)",color:"#78716C",icon:"➕"}];
+
+  // Project dropdown
+  const projList=document.getElementById("projList");
+  const projSearch=document.getElementById("projSearch");
+  populateDropdown(projList,projItems,"",S.proj);
+  
+  document.getElementById("projBtn").addEventListener("click",()=>{if(!S.running){S.showProj=!S.showProj;S.showCat=false;render();}});
+  if(projSearch)projSearch.addEventListener("input",e=>{populateDropdown(projList,projItems,e.target.value,S.proj);bindProjItems()});
+  
+  function bindProjItems(){
+    projList.querySelectorAll(".ddItem").forEach(b=>b.addEventListener("click",async()=>{
+      const id=b.dataset.id;
+      if(id==="__otro__"){document.getElementById("projOtro").classList.remove("hidden");document.getElementById("projOtroIn").focus();return;}
+      S.proj=id;S.showProj=false;render();
+    }));
+  }
+  bindProjItems();
+  
+  const poBtn=document.getElementById("projOtroBtn");
+  const poIn=document.getElementById("projOtroIn");
+  if(poBtn)poBtn.addEventListener("click",async()=>{const v=poIn.value.trim();if(v){S.proj=await mkProj(v);S.showProj=false;render();}});
+  if(poIn)poIn.addEventListener("keydown",async e=>{if(e.key==="Enter"){const v=poIn.value.trim();if(v){S.proj=await mkProj(v);S.showProj=false;render();}}});
+
+  // Category dropdown
+  const catList=document.getElementById("catList");
+  const catSearchEl=document.getElementById("catSearch");
+  populateDropdown(catList,catItems,"",S.cat);
+  
+  document.getElementById("catBtn").addEventListener("click",()=>{if(!S.running){S.showCat=!S.showCat;S.showProj=false;render();}});
+  if(catSearchEl)catSearchEl.addEventListener("input",e=>{populateDropdown(catList,catItems,e.target.value,S.cat);bindCatItems()});
+  
+  function bindCatItems(){
+    catList.querySelectorAll(".ddItem").forEach(b=>b.addEventListener("click",async()=>{
+      const id=b.dataset.id;
+      if(id==="__otro__"){document.getElementById("catOtro").classList.remove("hidden");document.getElementById("catOtroIn").focus();return;}
+      S.cat=id;S.showCat=false;render();
+    }));
+  }
+  bindCatItems();
+
+  const coBtn=document.getElementById("catOtroBtn");
+  const coIn=document.getElementById("catOtroIn");
+  if(coBtn)coBtn.addEventListener("click",async()=>{const v=coIn.value.trim();if(v){S.cat=await mkCat(v);S.showCat=false;render();}});
+  if(coIn)coIn.addEventListener("keydown",async e=>{if(e.key==="Enter"){const v=coIn.value.trim();if(v){S.cat=await mkCat(v);S.showCat=false;render();}}});
+
+  // Task, buttons
+  document.getElementById("taskIn").addEventListener("input",e=>{S.task=e.target.value});
+  const startBtn=document.getElementById("startBtn");
+  const stopBtn=document.getElementById("stopBtn");
+  const manualBtn=document.getElementById("manualBtn");
+  if(startBtn)startBtn.addEventListener("click",startT);
+  if(stopBtn)stopBtn.addEventListener("click",stopT);
+  if(manualBtn)manualBtn.addEventListener("click",()=>{S.showQuick=!S.showQuick;render()});
+  
+  const closeQ=document.getElementById("closeQuick");
+  const quickIn=document.getElementById("quickIn");
+  const quickBtn=document.getElementById("quickBtn");
+  if(closeQ)closeQ.addEventListener("click",()=>{S.showQuick=false;render()});
+  if(quickIn)quickIn.addEventListener("input",e=>{S.qmin=e.target.value});
+  if(quickBtn)quickBtn.addEventListener("click",doQuick);
+
+  // Close dropdowns on outside click
+  document.addEventListener("click",e=>{
+    if(S.showProj&&!document.getElementById("projWrap")?.contains(e.target)){S.showProj=false;render();}
+    if(S.showCat&&!document.getElementById("catWrap")?.contains(e.target)){S.showCat=false;render();}
+  },{once:true});
+}
+
+// ─── DASHBOARD ───
+function renderDash(fe,um,ucats,uprojs){
+  if(!fe.length)return`<div style="text-align:center;padding:60px 20px;color:#536471;animation:slideUp .3s ease"><div style="font-size:48px;margin-bottom:16px;opacity:.4">📊</div><p style="font-size:16px;font-weight:600">Sin datos todavía</p></div>`;
+  
+  const byCat={},byMem={},byTask={},byProj={};
+  let totalMin=0;
+  fe.forEach(e=>{
+    totalMin+=e.minutes;
+    byCat[e.category]=(byCat[e.category]||{t:0,c:0});byCat[e.category].t+=e.minutes;byCat[e.category].c++;
+    byMem[e.member]=(byMem[e.member]||{t:0,c:0});byMem[e.member].t+=e.minutes;byMem[e.member].c++;
+    const k=e.task||"Sin nombre";byTask[k]=(byTask[k]||{t:0,c:0,cat:e.category,ms:new Set()});byTask[k].t+=e.minutes;byTask[k].c++;byTask[k].ms.add(e.member);
+    const p=e.project||"Sin proyecto";byProj[p]=(byProj[p]||{t:0,c:0});byProj[p].t+=e.minutes;byProj[p].c++;
+  });
+  
+  const catD=Object.entries(byCat).map(([id,d])=>{const c=gc(id);return{n:c?.label||id,i:c?.icon||"⚙️",co:c?.color||"#78716C",t:d.t,c:d.c,a:d.t/d.c}}).sort((a,b)=>b.t-a.t);
+  const memD=Object.entries(byMem).map(([n,d])=>({n,t:d.t,c:d.c})).sort((a,b)=>b.t-a.t);
+  const projD=Object.entries(byProj).map(([n,d])=>({n,co:pc(n),t:d.t,c:d.c})).sort((a,b)=>b.t-a.t);
+  const taskD=Object.entries(byTask).map(([n,d])=>{const c=gc(d.cat);return{n,co:c?.color||"#78716C",t:d.t,c:d.c,a:d.t/d.c,mc:d.ms.size}}).sort((a,b)=>b.c-a.c);
+  const autoD=taskD.map(t=>({...t,score:t.c*2+t.t,reason:t.c>=5&&t.a<=5?"Repetitiva → Automatizar":t.t>=30?"Alto consumo → Optimizar":t.c>=3?"Frecuente → Considerar":"Monitorizar",pri:t.c>=5&&t.a<=5?"high":t.t>=30?"high":t.c>=3?"medium":"low"})).sort((a,b)=>b.score-a.score);
+
+  const maxP=projD[0]?.t||1;const maxC=catD[0]?.t||1;const maxM=memD[0]?.t||1;
+
+  const filterHtml=`<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+    <select class="fSelect" data-f="fM" style="padding:8px 14px;border-radius:10px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:13px;cursor:pointer"><option value="all">Todo el equipo</option>${um.map(m=>`<option value="${esc(m)}" ${S.fM===m?"selected":""}>${esc(m)}</option>`).join("")}</select>
+    <select class="fSelect" data-f="fP" style="padding:8px 14px;border-radius:10px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:13px;cursor:pointer"><option value="all">Todos proyectos</option>${uprojs.map(p=>`<option value="${esc(p)}" ${S.fP===p?"selected":""}>${esc(p)}</option>`).join("")}</select>
+    <select class="fSelect" data-f="fC" style="padding:8px 14px;border-radius:10px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:13px;cursor:pointer"><option value="all">Todas categorías</option>${allC().filter(c=>ucats.includes(c.id)).map(c=>`<option value="${esc(c.id)}" ${S.fC===c.id?"selected":""}>${c.icon} ${esc(c.label)}</option>`).join("")}</select>
+    <button id="refreshBtn" style="padding:8px 12px;border-radius:10px;border:1px solid #2F3336;background:#1A1F25;color:#71767B;cursor:pointer;font-size:12px">🔄</button>
+  </div>`;
+
+  return `<div style="animation:slideUp .3s ease">${filterHtml}
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px">
+      <div style="padding:16px;border-radius:16px;background:#1A1F25;border:1px solid #2F3336"><div style="font-size:11px;color:#71767B;margin-bottom:4px">⏱ Tiempo total</div><div class="mono" style="font-size:22px;font-weight:700">${fm(totalMin)}</div></div>
+      <div style="padding:16px;border-radius:16px;background:#1A1F25;border:1px solid #2F3336"><div style="font-size:11px;color:#71767B;margin-bottom:4px">📋 Registros</div><div class="mono" style="font-size:22px;font-weight:700">${fe.length}</div></div>
+      <div style="padding:16px;border-radius:16px;background:#1A1F25;border:1px solid #2F3336"><div style="font-size:11px;color:#71767B;margin-bottom:4px">📊 Media</div><div class="mono" style="font-size:22px;font-weight:700">${fm(totalMin/fe.length)}</div></div>
+    </div>
+    <!-- By Project -->
+    ${projD.length?`<div style="padding:20px;border-radius:16px;background:#1A1F25;border:1px solid #2F3336;margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:16px">📁 Tiempo por proyecto</h3>
+      ${projD.slice(0,15).map(p=>`<div style="display:flex;align-items:center;gap:10px;padding:5px 0"><div style="font-size:12px;color:#E7E9EA;min-width:80px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.n)}</div><div style="flex:1;height:8px;background:#2F3336;border-radius:4px;overflow:hidden"><div style="height:100%;width:${(p.t/maxP*100).toFixed(1)}%;background:${p.co};border-radius:4px"></div></div><div class="mono" style="font-size:12px;color:#71767B;min-width:60px;text-align:right">${fm(p.t)}</div></div>`).join("")}
+    </div>`:""}
+    <!-- By Category -->
+    <div style="padding:20px;border-radius:16px;background:#1A1F25;border:1px solid #2F3336;margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:16px">🕐 Tiempo por categoría</h3>
+      ${catD.map(c=>`<div style="display:flex;align-items:center;gap:10px;padding:5px 0"><div style="font-size:16px;min-width:24px;text-align:center">${c.i}</div><div style="font-size:12px;color:#E7E9EA;min-width:60px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.n)}</div><div style="flex:1;height:8px;background:#2F3336;border-radius:4px;overflow:hidden"><div style="height:100%;width:${(c.t/maxC*100).toFixed(1)}%;background:${c.co};border-radius:4px"></div></div><div class="mono" style="font-size:12px;color:#71767B;min-width:60px;text-align:right">${fm(c.t)}</div></div>`).join("")}
+    </div>
+    <!-- By Member -->
+    ${memD.length>1?`<div style="padding:20px;border-radius:16px;background:#1A1F25;border:1px solid #2F3336;margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:16px">👥 Tiempo por persona</h3>
+      ${memD.map(m=>`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;display:flex;align-items:center;gap:6px"><div style="width:18px;height:18px;border-radius:6px;background:${uc(m.n)};display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700">${m.n.charAt(0)}</div>${esc(m.n)}</span><span class="mono" style="font-size:13px;color:#71767B">${fm(m.t)} · ${m.c}</span></div><div style="height:6px;background:#2F3336;border-radius:3px;overflow:hidden"><div style="height:100%;width:${(m.t/maxM*100).toFixed(1)}%;background:${uc(m.n)};border-radius:3px"></div></div></div>`).join("")}
+    </div>`:""}
+    <!-- Automation -->
+    <div style="padding:20px;border-radius:16px;background:linear-gradient(135deg,#1A1F25,#1A1F2A);border:1px solid #F59E0B30;margin-bottom:16px">
+      <h3 style="font-size:14px;font-weight:700;color:#F59E0B;margin-bottom:4px">⚡ Oportunidades de automatización</h3>
+      <p style="font-size:12px;color:#71767B;margin-bottom:16px">Ordenado por impacto</p>
+      ${autoD.slice(0,10).map((t,i)=>`<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:12px;margin-bottom:8px;border-left:3px solid ${t.pri==="high"?"#EF4444":t.pri==="medium"?"#F59E0B":"#536471"}">
+        <div class="mono" style="width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:${t.pri==="high"?"#EF444420":t.pri==="medium"?"#F59E0B20":"#53647120"};color:${t.pri==="high"?"#EF4444":t.pri==="medium"?"#F59E0B":"#536471"}">${i+1}</div>
+        <div style="flex:1"><div style="font-size:14px;font-weight:600;margin-bottom:2px">${esc(t.n)}</div><div style="font-size:12px;color:#71767B;margin-bottom:4px">${t.c}× · ${fm(t.a)} media · ${fm(t.t)} total${t.mc>1?" · "+t.mc+" pers.":""}</div>
+        <div style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;background:${t.pri==="high"?"#EF444415":t.pri==="medium"?"#F59E0B15":"#53647115"};color:${t.pri==="high"?"#EF4444":t.pri==="medium"?"#F59E0B":"#536471"}">${t.reason}</div></div>
+      </div>`).join("")}
+    </div>
+    <!-- Task table -->
+    <div style="padding:20px;border-radius:16px;background:#1A1F25;border:1px solid #2F3336">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:16px">🔁 Frecuencia vs. Duración</h3>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
+        <thead><tr>${["Tarea","Veces","Media","Total"].map((h,i)=>`<th style="padding:8px 10px;font-size:11px;font-weight:600;color:#536471;text-align:${i?"right":"left"};border-bottom:1px solid #2F3336;text-transform:uppercase;letter-spacing:.05em">${h}</th>`).join("")}</tr></thead>
+        <tbody>${taskD.slice(0,20).map(t=>`<tr>
+          <td style="padding:8px 10px;font-size:13px;border-bottom:1px solid #2F333620"><div style="display:flex;align-items:center;gap:6px"><div style="width:6px;height:6px;border-radius:50%;background:${t.co};flex-shrink:0"></div><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">${esc(t.n)}</span></div></td>
+          <td class="mono" style="padding:8px 10px;font-size:13px;color:#71767B;text-align:right;border-bottom:1px solid #2F333620">${t.c}×</td>
+          <td class="mono" style="padding:8px 10px;font-size:13px;color:#71767B;text-align:right;border-bottom:1px solid #2F333620">${fm(t.a)}</td>
+          <td class="mono" style="padding:8px 10px;font-size:13px;font-weight:600;text-align:right;border-bottom:1px solid #2F333620">${fm(t.t)}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </div>
+  </div>`;
+}
+
+function bindDash(){
+  document.querySelectorAll(".fSelect").forEach(s=>s.addEventListener("change",e=>{S[s.dataset.f]=e.target.value;render();}));
+  document.getElementById("refreshBtn")?.addEventListener("click",fetchAll);
+}
+
+// ─── HISTORY ───
+function renderHistory(fe,um,ucats,uprojs){
+  const filterHtml=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <select class="fSelect" data-f="fM" style="padding:8px 14px;border-radius:10px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:13px;cursor:pointer"><option value="all">Equipo</option>${um.map(m=>`<option value="${esc(m)}" ${S.fM===m?"selected":""}>${esc(m)}</option>`).join("")}</select>
+      <select class="fSelect" data-f="fP" style="padding:8px 14px;border-radius:10px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:13px;cursor:pointer"><option value="all">Proyectos</option>${uprojs.map(p=>`<option value="${esc(p)}" ${S.fP===p?"selected":""}>${esc(p)}</option>`).join("")}</select>
+      <select class="fSelect" data-f="fC" style="padding:8px 14px;border-radius:10px;background:#1A1F25;border:1px solid #2F3336;color:#E7E9EA;font-size:13px;cursor:pointer"><option value="all">Categorías</option>${allC().filter(c=>ucats.includes(c.id)).map(c=>`<option value="${esc(c.id)}" ${S.fC===c.id?"selected":""}>${c.icon} ${esc(c.label)}</option>`).join("")}</select>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="refreshBtn" style="padding:8px 12px;border-radius:10px;border:1px solid #2F3336;background:#1A1F25;color:#71767B;cursor:pointer;font-size:12px">🔄</button>
+      <button id="csvBtn" style="padding:8px 14px;border-radius:10px;border:1px solid #2F3336;background:#1A1F25;color:#1D9BF0;font-size:13px;font-weight:600;cursor:pointer">📥 CSV</button>
+      ${S.entries.length?`<button id="clearBtn" style="padding:8px 14px;border-radius:10px;border:1px solid #EF444430;background:transparent;color:#EF4444;font-size:13px;font-weight:600;cursor:pointer">🗑</button>`:""}
+    </div>
+  </div>`;
+
+  if(!fe.length)return`<div style="animation:slideUp .3s ease">${filterHtml}<div style="text-align:center;padding:60px 20px;color:#536471"><div style="font-size:48px;margin-bottom:16px;opacity:.4">📋</div><p style="font-size:16px;font-weight:600">Sin registros</p></div></div>`;
+
+  return `<div style="animation:slideUp .3s ease">${filterHtml}
+    <div>${fe.map((e,i)=>{const c=gc(e.category);const own=e.member===S.user;return`
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border-bottom:1px solid #2F333630">
+        <div style="width:40px;height:40px;border-radius:12px;background:${(c?.color||"#78716C")}15;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${c?.icon||"⚙️"}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.task)}</div>
+          <div style="font-size:12px;color:#71767B;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+            <div style="width:14px;height:14px;border-radius:5px;background:${uc(e.member)};display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:7px;font-weight:700">${e.member.charAt(0)}</div>
+            ${esc(e.member)}
+            ${e.project?`<span style="background:${pc(e.project)}25;color:${pc(e.project)};padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">${esc(e.project)}</span>`:""}
+            <span>· ${e.date}</span>
+          </div>
+        </div>
+        <div class="mono" style="font-size:15px;font-weight:600;color:${c?.color||"#78716C"};white-space:nowrap">${fm(e.minutes)}</div>
+        ${own?`<button class="delBtn" data-id="${esc(e.id)}" style="background:none;border:none;color:#536471;cursor:pointer;padding:4px;font-size:14px">✕</button>`:""}
+      </div>`}).join("")}
+      <div style="padding:16px;text-align:center;font-size:13px;color:#536471;border-top:1px solid #2F3336;margin-top:8px">${fe.length} registros · ${fm(fe.reduce((s,e)=>s+e.minutes,0))} total</div>
+    </div>
+  </div>`;
+}
+
+function bindHistory(){
+  document.querySelectorAll(".fSelect").forEach(s=>s.addEventListener("change",e=>{S[s.dataset.f]=e.target.value;render();}));
+  document.getElementById("refreshBtn")?.addEventListener("click",fetchAll);
+  document.getElementById("csvBtn")?.addEventListener("click",()=>{
+    const fe=S.entries.filter(e=>{if(S.fM!=="all"&&e.member!==S.fM)return false;if(S.fC!=="all"&&e.category!==S.fC)return false;if(S.fP!=="all"&&e.project!==S.fP)return false;return true});
+    const h="Fecha,Persona,Proyecto,Categoría,Tarea,Minutos\n";
+    const r=fe.map(e=>{const c=gc(e.category);return`${e.date},${e.member},${e.project||""},"${c?.label||e.category}","${e.task}",${e.minutes}`}).join("\n");
+    const b=new Blob(["\uFEFF"+h+r],{type:"text/csv;charset=utf-8"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="process-tracker-"+new Date().toISOString().split("T")[0]+".csv";a.click();
+  });
+  document.getElementById("clearBtn")?.addEventListener("click",()=>{if(confirm("¿Borrar TODOS los registros del equipo?"))clearEntries()});
+  document.querySelectorAll(".delBtn").forEach(b=>b.addEventListener("click",()=>delEntry(b.dataset.id)));
+}
+
+// ══════════════════════════════════════
+// START
+// ══════════════════════════════════════
+init();
+</script>
+</body>
+</html>
