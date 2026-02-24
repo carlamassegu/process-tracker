@@ -63,7 +63,7 @@ let tI=null,tS=null,pE=0;
 function aP(){return[...DP,...S.cprojs]}
 function aC(){return[...DC_,...S.ccats]}
 function gc(id){return aC().find(c=>c.id===id)}
-async function fetchAll(){try{const d=await api(S.url,"getAll");S.entries=d.entries||[];S.ccats=d.categories||[];S.cprojs=d.projects||[];S.members=d.members||[];S.sync=true;}catch(e){S.sync=false;}R()}
+async function fetchAll(){try{const d=await api(S.url,"getAll");S.entries=d.entries||[];S.ccats=(d.categories||[]).map(c=>({id:c.id,l:c.label||c.l,c:c.color||c.c,i:c.icon||c.i,custom:true}));S.cprojs=d.projects||[];S.members=d.members||[];S.sync=true;}catch(e){S.sync=false;}R()}
 async function addEntry(e){S.entries.unshift(e);S.saving=true;R();try{await api(S.url,"addEntry",{data:e});S.sync=true;}catch(er){S.sync=false;}S.saving=false;R()}
 async function delEntry(id){S.entries=S.entries.filter(e=>e.id!==id);R();try{await api(S.url,"deleteEntry",{id})}catch(e){}}
 async function clearEntries(){S.entries=[];R();try{await api(S.url,"clearAll")}catch(e){}}
@@ -72,7 +72,7 @@ async function mkCat(name){const ex=aC().find(c=>c.l.toLowerCase()===name.toLowe
 async function mkProj(name){const up=name.toUpperCase().trim();const ex=aP().find(p=>p.toUpperCase()===up);if(ex)return ex;S.cprojs.push(name.trim());try{await api(S.url,"addProject",{name:name.trim()})}catch(e){}return name.trim()}
 async function init(){S.url=localStorage.getItem("pt-url");S.user=localStorage.getItem("pt-user");if(S.url){if(S.user){S.phase="app";R();await fetchAll()}else{S.phase="login";R();try{const d=await api(S.url,"getAll");S.members=d.members||[]}catch(e){}R()}}else{S.phase="setup";R()}setInterval(()=>{if(S.phase==="app"&&!S.running)fetchAll()},25000)}
 document.addEventListener("click",function(e){const t=e.target.closest("[data-a]");if(!t){let ch=false;if(S.showProj&&!e.target.closest("#projWrap")){S.showProj=false;S.showNewProj=false;S.newProjName="";ch=true}if(S.showCat&&!e.target.closest("#catWrap")){S.showCat=false;S.showNewCat=false;S.newCatName="";ch=true}if(ch)R();return}const a=t.dataset.a,v=t.dataset.v||"";
-if(a==="test-url"){const u=(S.sUrl||"").trim();if(!u.includes("script.google.com")){S.sErr="URL debe ser de script.google.com";R();return}S.sTest=true;S.sErr="";R();api(u,"getAll").then(d=>{if(d&&d.entries!==undefined){localStorage.setItem("pt-url",u);S.url=u;S.members=d.members||[];S.ccats=d.categories||[];S.cprojs=d.projects||[];S.sOk=true;R();setTimeout(()=>{S.phase="login";R()},800)}else{S.sErr="Respuesta inesperada";S.sTest=false;R()}}).catch(er=>{S.sErr=er.message;S.sTest=false;R()})}
+if(a==="test-url"){const u=(S.sUrl||"").trim();if(!u.includes("script.google.com")){S.sErr="URL debe ser de script.google.com";R();return}S.sTest=true;S.sErr="";R();api(u,"getAll").then(d=>{if(d&&d.entries!==undefined){localStorage.setItem("pt-url",u);S.url=u;S.members=d.members||[];S.ccats=(d.categories||[]).map(c=>({id:c.id,l:c.label||c.l,c:c.color||c.c,i:c.icon||c.i,custom:true}));S.cprojs=d.projects||[];S.sOk=true;R();setTimeout(()=>{S.phase="login";R()},800)}else{S.sErr="Respuesta inesperada";S.sTest=false;R()}}).catch(er=>{S.sErr=er.message;S.sTest=false;R()})}
 else if(a==="login"){doLogin(v||S.lName)}else if(a==="login-submit"){doLogin(S.lName)}
 else if(a==="tab"){S.view=v;S.showCat=false;S.showProj=false;S.editing=null;if(v!=="timer")fetchAll();else R()}
 else if(a==="logout"){S.user=null;localStorage.removeItem("pt-user");S.phase="login";R()}
